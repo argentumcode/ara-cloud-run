@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -105,7 +106,7 @@ func run(ctx context.Context, cloudRunUrl string, impersonateServiceAccount stri
 		}
 	}
 
-	targetUrl, err := url.Parse(os.Getenv("ARA_CLOUD_RUN_URL"))
+	targetUrl, err := url.Parse(cloudRunUrl)
 	if err != nil {
 		return fmt.Errorf("parse cloud run url: %w", err)
 	}
@@ -152,10 +153,23 @@ func run(ctx context.Context, cloudRunUrl string, impersonateServiceAccount stri
 	defer server.Close()
 	go func() {
 		err := server.Serve(listener)
-		if err != nil {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		}
 	}()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/api/", listener.Addr()), nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.SetBasicAuth("ara", randomPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request to ARA API: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ara API returns unexpceted status code(%d)", resp.StatusCode)
+	}
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = os.Stdout

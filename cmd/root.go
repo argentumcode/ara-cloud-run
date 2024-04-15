@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -152,7 +153,7 @@ func run(ctx context.Context, cloudRunUrl string, impersonateServiceAccount stri
 	defer server.Close()
 	go func() {
 		err := server.Serve(listener)
-		if err != nil {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		}
 	}()

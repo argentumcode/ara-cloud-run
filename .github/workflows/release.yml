@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release-prepare:
+    name: Prepare Release
+    runs-on: ubuntu-22.04
+    outputs:
+      result: ${{ steps.prepare.outputs.result }}
+      version: ${{ steps.prepare.outputs.version }}
+      changeLog: ${{ steps.prepare.outputs.changeLog }}
+    steps:
+      - uses: argentumcode/release-action@v0.1.2
+        id: prepare
+        with:
+          action: prepare
+          token: ${{ secrets.GITHUB_TOKEN }}
+          secret: ${{ secrets.RELEASE_SECRET }}
+
+  release:
+    name: Release
+    runs-on: ubuntu-22.04
+    needs:
+      - release-prepare
+    if: ${{ needs.release-prepare.outputs.result == 'release' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: "go.mod"
+
+      - name: Prepare Release
+        run: |
+          set -eu
+          echo "$RELEASE_NOTE" > /tmp/release-notes.txt
+          git tag v${{ needs.release-prepare.outputs.version }}
+        env:
+          RELEASE_NOTE: ${{ needs.release-prepare.outputs.changeLog }}
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@7ec5c2b0c6cdda6e8bbb49444bc797dd33d74dd8 # v5.0.0
+        with:
+          distribution: goreleaser
+          version: v1.21.2
+          args: release --release-notes /tmp/release-notes.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-pull-request:
+    name: Create Release Pull Request
+    runs-on: ubuntu-22.04
+    needs:
+      - release-prepare
+    if: ${{ needs.release-prepare.outputs.result == 'prepare' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Prepare Release Notes
+        id: release_notes
+        run: |
+          set -e
+          git config --global user.name 'release-bot'
+          git config --global user.email 'release-bot'
+          npx standard-version
+          TAG="$(git tag --points-at HEAD)"
+          echo "::set-output name=version::${TAG:1}"
+          git diff HEAD^1 HEAD CHANGELOG.md | egrep -v '^\+\+\+' | grep -e '^\+' | sed -e 's/^\+//g' > /tmp/release-notes.txt
+      - name: Create Release Pull Request
+        uses: argentumcode/release-action@v0.1.2
+        with:
+          action: create-pull-request
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ steps.release_notes.outputs.version }}
+          changelogFile: /tmp/release-notes.txt
+          secret: ${{ secrets.RELEASE_SECRET }}

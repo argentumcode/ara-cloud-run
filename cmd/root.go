@@ -105,7 +105,7 @@ func run(ctx context.Context, cloudRunUrl string, impersonateServiceAccount stri
 		}
 	}
 
-	targetUrl, err := url.Parse(os.Getenv("ARA_CLOUD_RUN_URL"))
+	targetUrl, err := url.Parse(cloudRunUrl)
 	if err != nil {
 		return fmt.Errorf("parse cloud run url: %w", err)
 	}
